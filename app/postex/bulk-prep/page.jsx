@@ -236,47 +236,61 @@ function BulkPrepContent() {
             }));
 
             const res = await adminRequest('/postex/bulk-book', 'POST', { shipments, forceRebook });
-            
-            if (res?.success && res.summary?.successCount > 0) {
-                const { successCount, failedCount } = res.summary;
-                
-                if (failedCount === 0) {
-                    toast.success(`Success! All ${successCount} orders booked on PostEx.`);
-                    await refreshData(); 
-                    router.push('/postex/bookings?bulkBooking=success');
-                } else {
-                    // Partial Success
-                    const map = {};
-                    res.failedOrders?.forEach(f => map[f.orderId] = f.reason);
-                    setFailedMap(map);
 
-                    toast.success(`${successCount} orders booked successfully.`);
-                    toast.error(`${failedCount} orders failed. See reasons in table below.`, { duration: 6000 });
-                    await refreshData(); 
+            if (res?.success) {
+                const { successCount = 0, failedCount = 0 } = res.summary || {};
+
+                // IDs of orders that were successfully booked on PostEx
+                const bookedIds = new Set(
+                    (res.bookedOrders || []).map(b => String(b.orderId))
+                );
+
+                // Build failure map for orders that failed
+                const map = {};
+                (res.failedOrders || []).forEach(f => { map[String(f.orderId)] = f.reason; });
+
+                if (successCount > 0) {
+                    // Remove booked orders from the manifest immediately
+                    setOrders(prev => prev.filter(o => !bookedIds.has(String(o.orderId))));
+                    await refreshData();
+                }
+
+                if (failedCount === 0 && successCount > 0) {
+                    // All orders booked — go to Shipments
+                    toast.success(`All ${successCount} order${successCount > 1 ? 's' : ''} booked on PostEx!`);
+                    router.push('/postex/shipments');
+                } else if (successCount > 0 && failedCount > 0) {
+                    // Partial success — keep only failed orders on screen
+                    setFailedMap(map);
+                    toast.success(`${successCount} order${successCount > 1 ? 's' : ''} booked and moved to Shipments.`);
+                    toast.error(
+                        `${failedCount} order${failedCount > 1 ? 's' : ''} failed. Review reasons below.`,
+                        { duration: 6000 }
+                    );
+                } else {
+                    // All failed
+                    setFailedMap(map);
+                    const firstReason = res.failedOrders?.[0]?.reason || 'PostEx API rejection';
+                    toast.error(`All orders failed to dispatch: ${firstReason}`, { duration: 10000 });
+                    console.error('PostEx Detailed Failures:', res.failedOrders);
                 }
             } else {
-                // Total Failure
+                // Server-level failure
                 const map = {};
-                res.failedOrders?.forEach(f => map[f.orderId] = f.reason);
+                (res?.failedOrders || []).forEach(f => { map[String(f.orderId)] = f.reason; });
                 setFailedMap(map);
-
-                const failedCount = res?.summary?.failedCount || orders.length;
-                const firstReason = res?.failedOrders?.[0]?.reason || 'API rejection';
+                const firstReason = res?.failedOrders?.[0]?.reason || res?.message || 'Unknown error';
                 toast.error(`Dispatch failed: ${firstReason}`, { duration: 10000 });
-                
-                if (res?.failedOrders?.length > 0) {
-                    console.error("PostEx Detailed Failures:", res.failedOrders);
-                }
             }
         } catch (error) {
-            console.error("Bulk booking error:", error);
+            console.error('Bulk booking error:', error);
             toast.error('Fatal dispatch failure. Check your connection.');
         } finally {
             setSubmitting(false);
         }
     };
 
-    if (!loading && (prepError || orders.length === 0)) {
+    if (!loading && !submitting && (prepError || orders.length === 0)) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4 text-center">
                 <AlertCircle className="text-[#e63946]" size={40} />
