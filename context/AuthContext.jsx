@@ -3,12 +3,9 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 
-const AuthContext = createContext(null);
+import { getApiUrl } from '@/lib/apiConfig';
 
-let API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000') + '/api';
-if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && API_URL.includes('localhost')) {
-    API_URL = 'https://store-backend-neon.vercel.app/api';
-}
+const AuthContext = createContext(null);
 
 /**
  * AuthProvider - Manages authentication state
@@ -52,7 +49,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             try {
-                const res = await fetch(`${API_URL}/auth/me`, {
+                const res = await fetch(`${getApiUrl()}/auth/me`, {
                     headers: {
                         Authorization: `Bearer ${token}`,
                     },
@@ -85,7 +82,7 @@ export const AuthProvider = ({ children }) => {
 
     const login = useCallback(async (email, password) => {
         try {
-            const url = `${API_URL}/auth/login`;
+            const url = `${getApiUrl()}/auth/login`;
             console.log(`📝 Attempting login at: ${url}`);
             
             const res = await fetch(url, {

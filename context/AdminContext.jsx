@@ -2,13 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import useOrderStore from "@/store/useOrderStore";
+import { getApiUrl, getSocketUrl, isSocketEnabled } from '@/lib/apiConfig';
 
 const AdminContext = createContext();
-
-let API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000') + '/api';
-if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && API_URL.includes('localhost')) {
-    API_URL = 'https://store-backend-neon.vercel.app/api';
-}
 
 export const AdminProvider = ({ children }) => {
     const [token, setToken] = useState(null);
@@ -47,7 +43,7 @@ export const AdminProvider = ({ children }) => {
         };
 
         try {
-            const res = await fetch(`${API_URL}${url}`, options);
+            const res = await fetch(`${getApiUrl()}${url}`, options);
             
             // Check if response is JSON before parsing
             const contentType = res.headers.get("content-type");
@@ -201,10 +197,9 @@ export const AdminProvider = ({ children }) => {
 
     // --- Socket.IO Integration ---
     useEffect(() => {
-        let socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
-        if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && socketUrl.includes('localhost')) {
-            socketUrl = 'https://store-backend-neon.vercel.app';
-        }
+        if (!isSocketEnabled()) return undefined;
+
+        const socketUrl = getSocketUrl();
 
         // Dynamic import to avoid SSR issues if any, though useEffect runs on client
         import('socket.io-client').then(({ io }) => {

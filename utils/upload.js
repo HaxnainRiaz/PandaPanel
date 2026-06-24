@@ -1,16 +1,11 @@
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 export const uploadImage = async (file) => {
     try {
         const formData = new FormData();
         formData.append('image', file);
 
-        let apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-        if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && apiUrl.includes('localhost')) {
-            apiUrl = 'https://store-backend-neon.vercel.app';
-        }
-        // Clean up base URL for the upload request
-        const baseApiUrl = apiUrl.replace(/\/$/, '').replace(/\/api$/, '');
-
-        const response = await fetch(`${baseApiUrl}/api/upload`, {
+        const response = await fetch(`${getApiBaseUrl()}/api/upload`, {
             method: 'POST',
             body: formData,
         });
@@ -55,32 +50,20 @@ export const validateImageFile = (file) => {
 };
 
 /**
- * 🖼️ Dynamic Image Resolver for Admin Dashboard
+ * Dynamic image resolver for admin dashboard
  */
 export function resolveImageUrl(src, placeholder = "https://images.unsplash.com/photo-1596755094514-f87e34085b2c?auto=format&fit=crop&q=80&w=1200") {
     if (!src || typeof src !== 'string') return placeholder;
 
     let imageUrl = src;
 
-    // 1. Handle remote URLs
     if (imageUrl.startsWith('http')) {
-        // Handle legacy localhost URLs in the production database
         if (process.env.NODE_ENV === 'production' && imageUrl.includes('localhost:5000')) {
-            return imageUrl.replace(/https?:\/\/localhost:5000/, process.env.NEXT_PUBLIC_API_URL || 'https://store-backend-neon.vercel.app');
+            return imageUrl.replace(/https?:\/\/localhost:5000/, getApiBaseUrl());
         }
         return imageUrl;
     }
 
-    // 2. Handle relative paths from backend
-    let baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && baseUrl.includes('localhost')) {
-        baseUrl = 'https://store-backend-neon.vercel.app';
-    }
-    baseUrl = baseUrl.replace(/\/$/, '').replace(/\/api$/, '');
-
-    // Clean up the path: remove leading slash and 'uploads/' prefix if present
     const cleanPath = imageUrl.replace(/^\//, '').replace(/^uploads\//, '');
-
-    return `${baseUrl}/uploads/${cleanPath}`;
+    return `${getApiBaseUrl()}/uploads/${cleanPath}`;
 }
-

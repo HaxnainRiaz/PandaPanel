@@ -16,7 +16,9 @@ import {
 import { toast } from "react-hot-toast";
 import MetaOAuthSetupChecklist, { getMetaErrorMessage } from "./MetaOAuthSetupChecklist";
 
-const BACKEND_ORIGIN = (process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/api\/?$/, "").replace(/\/+$/, "");
+import { getApiBaseUrl } from "@/lib/apiConfig";
+
+const BACKEND_ORIGIN = getApiBaseUrl();
 
 export default function MetaSetupWizard({
     config,

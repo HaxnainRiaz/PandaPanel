@@ -18,6 +18,7 @@ import {
 
 import Link from "next/link";
 import { formatPrice, formatCompactPrice } from "@/lib/utils";
+import { LOCAL_URLS, PRODUCTION_URLS } from "@/lib/apiConfig";
 import { useEffect, useMemo, useState } from "react";
 
 function getShortOrderRef(order) {
@@ -315,7 +316,7 @@ export default function AdminDashboard() {
                     </div>
 
                     <a
-                        href="http://localhost:3000"
+                        href={typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? LOCAL_URLS.webstore : PRODUCTION_URLS.webstore}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-2 bg-[#0a4019] text-[#d3d3d3] px-5 py-3 rounded-2xl hover:bg-[#051712] transition-all shadow-lg shadow-[#0a4019]/20 font-bold text-xs uppercase tracking-widest active:scale-95"
