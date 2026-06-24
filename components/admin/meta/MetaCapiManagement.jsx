@@ -18,8 +18,12 @@ import {
     Layers, 
     Eye, 
     Activity, 
-    Copy 
+    Copy,
+    XCircle,
+    ExternalLink,
+    Loader2
 } from "lucide-react";
+import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 
 export default function MetaCapiManagement({ config, refresh }) {
@@ -299,6 +303,63 @@ export default function MetaCapiManagement({ config, refresh }) {
     };
 
     const hasToken = !!config?.hasCapiToken;
+
+    const capiState = (() => {
+        if (!config) return 'loading';
+        if (config.capiStatus) return config.capiStatus;
+        if (config.connectionStatus !== 'connected') return 'not_connected';
+        if (!config.pixelId) return 'connected_missing_pixel';
+        if (config.lastErrorMessage?.toLowerCase?.().includes('expired')) return 'token_expired';
+        if (!hasToken) return 'capi_config_incomplete';
+        return 'connected_ready';
+    })();
+
+    if (!config) {
+        return (
+            <div className="max-w-4xl p-8 bg-white rounded-[2rem] border border-neutral-100 text-center">
+                <Loader2 className="animate-spin mx-auto text-[#0a4019] mb-3" size={28} />
+                <p className="text-sm text-neutral-500">Loading Conversions API status...</p>
+            </div>
+        );
+    }
+
+    if (capiState === 'not_connected') {
+        return (
+            <div className="max-w-4xl p-8 bg-amber-50 rounded-[2rem] border border-amber-100 space-y-4">
+                <div className="flex items-center gap-3 text-amber-700">
+                    <AlertTriangle size={22} />
+                    <h2 className="text-lg font-bold">Meta account not connected</h2>
+                </div>
+                <p className="text-sm text-amber-800">Connect your Meta account in the Setup tab before configuring Conversions API.</p>
+                <button onClick={refresh} className="text-xs font-bold text-[#0a4019] underline">Retry status check</button>
+            </div>
+        );
+    }
+
+    if (capiState === 'connected_missing_pixel') {
+        return (
+            <div className="max-w-4xl p-8 bg-white rounded-[2rem] border border-neutral-100 space-y-4">
+                <div className="flex items-center gap-3 text-[#0a4019]">
+                    <AlertTriangle size={22} />
+                    <h2 className="text-lg font-bold">Pixel not selected</h2>
+                </div>
+                <p className="text-sm text-neutral-500">Your Meta account is connected, but no Pixel/Dataset is selected yet. Complete the setup wizard to choose a pixel.</p>
+                <button onClick={refresh} className="text-xs font-bold text-[#0a4019] underline">Refresh status</button>
+            </div>
+        );
+    }
+
+    if (capiState === 'token_expired') {
+        return (
+            <div className="max-w-4xl p-8 bg-red-50 rounded-[2rem] border border-red-100 space-y-4">
+                <div className="flex items-center gap-3 text-red-700">
+                    <AlertTriangle size={22} />
+                    <h2 className="text-lg font-bold">Meta token expired</h2>
+                </div>
+                <p className="text-sm text-red-800">Reconnect your Meta account or paste a new CAPI access token below.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-4xl space-y-8 animate-fadeIn">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
     Facebook,
     Database,
@@ -36,7 +36,16 @@ export default function MetaSetupWizard({
         return config?.setupStep || 2;
     };
 
-    const [step, setStep] = useState(getInitialStep());
+    const [step, setStep] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = window.localStorage.getItem('meta_wizard_step');
+            if (saved) {
+                const parsed = Number(saved);
+                if (parsed >= 1 && parsed <= 7) return parsed;
+            }
+        }
+        return getInitialStep();
+    });
     const [loading, setLoading] = useState(false);
     const [isActivatingSuccess, setIsActivatingSuccess] = useState(false);
     const [fallbackMode, setFallbackMode] = useState(false);
@@ -45,6 +54,8 @@ export default function MetaSetupWizard({
     const [oauthPolling, setOauthPolling] = useState(false);
     // Tracks whether the META_AUTH_SUCCESS postMessage was received before popup closed
     const [oauthSuccessReceived, setOauthSuccessReceived] = useState(false);
+    const oauthSuccessRef = useRef(false);
+    const fetchedAssetsRef = useRef({});
     const [oauthConfigCheck, setOauthConfigCheck] = useState(null);
 
     const [assets, setAssets] = useState({
@@ -80,6 +91,12 @@ export default function MetaSetupWizard({
         config?.pageId
     ]);
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem('meta_wizard_step', String(step));
+        }
+    }, [step]);
+
     /**
      * Safer step sync.
      * Prevents wizard from jumping backward after successful activation.
@@ -100,14 +117,16 @@ export default function MetaSetupWizard({
             return;
         }
 
-        if (config?.setupStep && step < 7) {
-            setStep(config.setupStep);
+        if (config?.setupStep) {
+            setStep((prev) => {
+                if (config.setupStep > prev) return config.setupStep;
+                return prev;
+            });
         }
     }, [
         isConnected,
         config?.setupCompleted,
         config?.setupStep,
-        step,
         isActivatingSuccess
     ]);
 
@@ -202,19 +221,27 @@ export default function MetaSetupWizard({
      * Fetch assets when step changes.
      */
     useEffect(() => {
-        if (step === 2) {
+        if (step === 2 && !fetchedAssetsRef.current.businesses) {
+            fetchedAssetsRef.current.businesses = true;
             fetchAssets("businesses");
         }
 
         if (step === 3 && selectedAsset.businessId) {
+            const cacheKey = `adAccounts:${selectedAsset.businessId}`;
+            if (fetchedAssetsRef.current[cacheKey]) return;
+            fetchedAssetsRef.current[cacheKey] = true;
             fetchAssets("adAccounts", selectedAsset.businessId);
         }
 
         if (step === 4 && selectedAsset.adAccountId) {
+            const cacheKey = `pixels:${selectedAsset.adAccountId}`;
+            if (fetchedAssetsRef.current[cacheKey]) return;
+            fetchedAssetsRef.current[cacheKey] = true;
             fetchAssets("pixels", selectedAsset.adAccountId);
         }
 
-        if (step === 5) {
+        if (step === 5 && !fetchedAssetsRef.current.pages) {
+            fetchedAssetsRef.current.pages = true;
             fetchAssets("pages");
         }
     }, [
@@ -247,6 +274,7 @@ export default function MetaSetupWizard({
             if (!allowedOrigins.includes(event.origin)) return;
 
             if (event.data?.type === "META_AUTH_SUCCESS" || event.data?.type === "META_OAUTH_SUCCESS") {
+                oauthSuccessRef.current = true;
                 setOauthSuccessReceived(true);
                 toast.success("Meta account connected successfully!");
 
@@ -334,6 +362,7 @@ export default function MetaSetupWizard({
             setOauthPopup(popup);
             setOauthPolling(true);
             setOauthSuccessReceived(false);
+            oauthSuccessRef.current = false;
 
             const popupCheckInterval = setInterval(async () => {
                 if (popup.closed) {
@@ -342,13 +371,12 @@ export default function MetaSetupWizard({
                     setOauthPolling(false);
                     setLoading(false);
 
-                    if (refresh) {
+                    if (!oauthSuccessRef.current && refresh) {
                         await refresh();
                     }
 
-                    setOauthSuccessReceived((wasSuccess) => {
-                        if (!wasSuccess) {
-                            toast(
+                    if (!oauthSuccessRef.current) {
+                        toast(
                                 (t) => (
                                     <span style={{ fontSize: "13px", lineHeight: "1.6" }}>
                                         <strong>Meta popup closed without connecting.</strong><br />
@@ -357,9 +385,7 @@ export default function MetaSetupWizard({
                                 ),
                                 { duration: 10000 }
                             );
-                        }
-                        return wasSuccess;
-                    });
+                    }
                 }
             }, 1000);
         } catch (err) {
@@ -399,8 +425,6 @@ export default function MetaSetupWizard({
             }));
 
             setStep(3);
-
-            if (refresh) await refresh();
         } catch (err) {
             toast.error(err.message || "Failed to select business");
         } finally {
@@ -435,8 +459,6 @@ export default function MetaSetupWizard({
             }));
 
             setStep(4);
-
-            if (refresh) await refresh();
         } catch (err) {
             toast.error(err.message || "Failed to select ad account");
         } finally {
@@ -464,8 +486,6 @@ export default function MetaSetupWizard({
             }));
 
             setStep(5);
-
-            if (refresh) await refresh();
         } catch (err) {
             toast.error(err.message || "Failed to select pixel");
         } finally {
@@ -501,8 +521,6 @@ export default function MetaSetupWizard({
 
             setFallbackMode(false);
             setStep(5);
-
-            if (refresh) await refresh();
         } catch (err) {
             toast.error(err.message || "Failed to save Pixel");
         } finally {
@@ -530,8 +548,6 @@ export default function MetaSetupWizard({
             }));
 
             setStep(6);
-
-            if (refresh) await refresh();
         } catch (err) {
             toast.error(err.message || "Failed to select page");
         } finally {

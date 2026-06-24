@@ -194,7 +194,7 @@ export default function BlogsPage() {
         setSaveError("");
 
         // If image is a base64 string and too large, warn user (non-blocking)
-        if (currentBlog.image && currentBlog.image.startsWith('data:image') && currentBlog.image.length > 1000000) {
+        if (currentBlog.image && typeof currentBlog.image === 'string' && currentBlog.image.startsWith('data:image') && currentBlog.image.length > 1000000) {
             addToast('Large image detected. Saving may take a moment.', 'info');
         }
 
@@ -320,7 +320,7 @@ export default function BlogsPage() {
                                 <div className="aspect-video rounded-xl overflow-hidden bg-white border border-[#F5F3F0] relative group">
                                     {currentBlog.image && (
                                         <img
-                                            src={currentBlog.image.startsWith('blob:') ? currentBlog.image : resolveImageUrl(currentBlog.image)}
+                                            src={typeof currentBlog.image === 'string' && currentBlog.image.startsWith('blob:') ? currentBlog.image : resolveImageUrl(currentBlog.image)}
                                             alt="Cover"
                                             className={`w-full h-full object-cover ${uploadingImage ? 'opacity-50 blur-sm' : ''} transition-all duration-500`}
                                         />

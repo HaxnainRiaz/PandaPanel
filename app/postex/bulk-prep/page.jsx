@@ -13,6 +13,8 @@ import {
 import { Button } from '@/components/ui';
 import toast from 'react-hot-toast';
 
+const GLOBAL_SETTINGS_KEY = 'postex_bulk_global_settings';
+
 function BulkPrepContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -23,10 +25,82 @@ function BulkPrepContent() {
     const [addresses, setAddresses] = useState([]);
     const [status, setStatus] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [referenceLoading, setReferenceLoading] = useState(true);
+    const [referenceError, setReferenceError] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [forceRebook, setForceRebook] = useState(false);
     const [prepError, setPrepError] = useState(null);
     const [failedMap, setFailedMap] = useState({});
+    const [globalPickup, setGlobalPickup] = useState('');
+    const [globalCity, setGlobalCity] = useState('');
+    const [globalOrderType, setGlobalOrderType] = useState('');
+
+    const readCachedSettings = () => {
+        try {
+            const raw = localStorage.getItem(GLOBAL_SETTINGS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const writeCachedSettings = (settings) => {
+        try {
+            localStorage.setItem(GLOBAL_SETTINGS_KEY, JSON.stringify(settings));
+        } catch {
+            // ignore storage errors
+        }
+    };
+
+    // Load reference data once and cache global settings
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadReference = async () => {
+            setReferenceLoading(true);
+            setReferenceError(null);
+
+            const cached = readCachedSettings();
+            if (cached) {
+                setGlobalPickup(cached.pickupAddressCode || '');
+                setGlobalCity(cached.cityName || '');
+                setGlobalOrderType(cached.orderType || 'Normal');
+            }
+
+            try {
+                const [citiesRes, addrRes, statusRes] = await Promise.all([
+                    adminRequest('/postex/cities'),
+                    adminRequest('/postex/pickup-addresses'),
+                    adminRequest('/postex/status')
+                ]);
+
+                if (cancelled) return;
+
+                if (citiesRes?.success) setCities(citiesRes.data || []);
+                else setReferenceError(citiesRes?.message || 'Failed to load PostEx cities');
+
+                if (addrRes?.success) setAddresses(addrRes.data || []);
+                else setReferenceError(addrRes?.message || 'Failed to load pickup addresses');
+
+                if (statusRes?.success) {
+                    setStatus(statusRes.data);
+                    const defaultPickup = statusRes.data?.defaultPickupAddressCode || cached?.pickupAddressCode || '';
+                    if (defaultPickup && !cached?.pickupAddressCode) {
+                        setGlobalPickup(defaultPickup);
+                    }
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setReferenceError('Failed to load PostEx global settings. You can retry without leaving this page.');
+                }
+            } finally {
+                if (!cancelled) setReferenceLoading(false);
+            }
+        };
+
+        loadReference();
+        return () => { cancelled = true; };
+    }, [adminRequest]);
 
     // Phase 4: Fetch fresh data for selected orders
     useEffect(() => {
@@ -40,34 +114,30 @@ function BulkPrepContent() {
             const orderIds = idsString.split(',').filter(Boolean);
 
             try {
-                // Fetch reference data and order data in parallel
-                const [citiesRes, addrRes, prepRes, statusRes] = await Promise.all([
-                    adminRequest('/postex/cities'),
-                    adminRequest('/postex/pickup-addresses'),
-                    adminRequest('/postex/bulk-prepare', 'POST', { orderIds }),
-                    adminRequest('/postex/status')
-                ]);
+                const prepRes = await adminRequest('/postex/bulk-prepare', 'POST', { orderIds });
+                const cached = readCachedSettings();
 
-                if (citiesRes?.success) setCities(citiesRes.data || []);
-                if (addrRes?.success) setAddresses(addrRes.data || []);
-                if (statusRes?.success) setStatus(statusRes.data);
-                
                 if (prepRes?.success && Array.isArray(prepRes.data) && prepRes.data.length > 0) {
-                    const citiesList = citiesRes?.data || [];
-                    const defaultPickup = statusRes?.data?.defaultPickupAddressCode || "";
-                    
-                    const data = prepRes.data.map(o => {
-                        const matchedCity = citiesList.find(c => 
-                            c.name.toLowerCase() === (o.originalCity || '').toLowerCase()
-                        )?.name || '';
+                    const defaultPickup = status?.defaultPickupAddressCode || cached?.pickupAddressCode || globalPickup || '';
 
-                        return {
-                            ...o,
-                            cityName: matchedCity,
-                            pickupAddressCode: defaultPickup,
-                            orderType: 'Normal'
-                        };
-                    });
+                    const matchOperationalCity = (originalCity) => {
+                        if (!originalCity || !cities.length) return cached?.cityName || '';
+                        const normalized = originalCity.trim().toLowerCase();
+                        const exact = cities.find(c => c.name?.toLowerCase() === normalized);
+                        if (exact) return exact.name;
+                        const partial = cities.find(c =>
+                            c.name?.toLowerCase().includes(normalized) ||
+                            normalized.includes(c.name?.toLowerCase())
+                        );
+                        return partial?.name || cached?.cityName || '';
+                    };
+
+                    const data = prepRes.data.map(o => ({
+                        ...o,
+                        cityName: matchOperationalCity(o.originalCity),
+                        pickupAddressCode: defaultPickup,
+                        orderType: cached?.orderType || 'Normal'
+                    }));
                     setOrders(data);
                 } else {
                     setPrepError(prepRes?.message || 'Could not load orders for bulk booking. Ensure the backend is running and orders exist in the database.');
@@ -81,8 +151,11 @@ function BulkPrepContent() {
                 setLoading(false);
             }
         };
-        init();
-    }, [adminRequest, searchParams]);
+
+        if (!referenceLoading) {
+            init();
+        }
+    }, [adminRequest, searchParams, referenceLoading, cities, status, globalPickup]);
 
     const updateOrder = (idx, fields) => {
         setOrders(prev => {
@@ -95,7 +168,41 @@ function BulkPrepContent() {
     const applyToAll = (field, value) => {
         if (!value) return;
         setOrders(prev => prev.map(o => ({ ...o, [field]: value })));
+
+        const nextSettings = {
+            pickupAddressCode: field === 'pickupAddressCode' ? value : globalPickup,
+            cityName: field === 'cityName' ? value : globalCity,
+            orderType: field === 'orderType' ? value : globalOrderType
+        };
+        writeCachedSettings(nextSettings);
+
+        if (field === 'pickupAddressCode') setGlobalPickup(value);
+        if (field === 'cityName') setGlobalCity(value);
+        if (field === 'orderType') setGlobalOrderType(value);
+
         toast.success(`Updated ${field} for all rows`);
+    };
+
+    const retryReferenceLoad = async () => {
+        setReferenceLoading(true);
+        setReferenceError(null);
+        try {
+            const [citiesRes, addrRes, statusRes] = await Promise.all([
+                adminRequest('/postex/cities'),
+                adminRequest('/postex/pickup-addresses'),
+                adminRequest('/postex/status')
+            ]);
+            if (citiesRes?.success) setCities(citiesRes.data || []);
+            if (addrRes?.success) setAddresses(addrRes.data || []);
+            if (statusRes?.success) setStatus(statusRes.data);
+            if (!citiesRes?.success && !addrRes?.success) {
+                setReferenceError('PostEx reference data is still unavailable.');
+            }
+        } catch {
+            setReferenceError('PostEx reference data is still unavailable.');
+        } finally {
+            setReferenceLoading(false);
+        }
     };
 
     // Phase 5 & 8: Confirm Dispatch Logic
@@ -155,7 +262,7 @@ function BulkPrepContent() {
 
                 const failedCount = res?.summary?.failedCount || orders.length;
                 const firstReason = res?.failedOrders?.[0]?.reason || 'API rejection';
-                toast.error(`Dispatch Failed: ${firstReason}`, { duration: 8000 });
+                toast.error(`Dispatch failed: ${firstReason}`, { duration: 10000 });
                 
                 if (res?.failedOrders?.length > 0) {
                     console.error("PostEx Detailed Failures:", res.failedOrders);
@@ -182,11 +289,13 @@ function BulkPrepContent() {
         );
     }
 
-    if (loading) {
+    if (loading || referenceLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
                 <Loader2 className="animate-spin text-[#0a4019]" size={32} />
-                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Initialising Logistics Engine...</p>
+                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
+                    {referenceLoading ? 'Loading PostEx global settings...' : 'Initialising Logistics Engine...'}
+                </p>
             </div>
         );
     }
@@ -234,24 +343,37 @@ function BulkPrepContent() {
                     <Settings2 size={16} className="text-emerald-400" />
                     <span className="text-[10px] font-bold uppercase tracking-widest">Global Settings:</span>
                 </div>
+
+                {referenceError && (
+                    <div className="flex items-center gap-3 bg-amber-500/20 border border-amber-400/30 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-tight">
+                        <AlertCircle size={14} className="text-amber-300" />
+                        <span className="text-amber-100">{referenceError}</span>
+                        <button onClick={retryReferenceLoad} className="underline text-white">Retry</button>
+                    </div>
+                )}
                 
                 <select 
+                    value={globalPickup}
                     onChange={(e) => applyToAll('pickupAddressCode', e.target.value)}
-                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest outline-none hover:bg-white/20 transition-all cursor-pointer"
+                    disabled={!addresses.length}
+                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest outline-none hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
                 >
-                    <option value="" className="text-black">Set All Pickups...</option>
+                    <option value="" className="text-black">{addresses.length ? 'Set All Pickups...' : 'Loading pickups...'}</option>
                     {addresses.map(a => <option key={a.addressCode} value={a.addressCode} className="text-black">{a.address}</option>)}
                 </select>
 
                 <select 
+                    value={globalCity}
                     onChange={(e) => applyToAll('cityName', e.target.value)}
-                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest outline-none hover:bg-white/20 transition-all cursor-pointer"
+                    disabled={!cities.length}
+                    className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest outline-none hover:bg-white/20 transition-all cursor-pointer disabled:opacity-50"
                 >
-                    <option value="" className="text-black">Set All Cities...</option>
+                    <option value="" className="text-black">{cities.length ? 'Set All Cities...' : 'Loading cities...'}</option>
                     {cities.map(c => <option key={c.name} value={c.name} className="text-black">{c.name}</option>)}
                 </select>
 
                 <select 
+                    value={globalOrderType}
                     onChange={(e) => applyToAll('orderType', e.target.value)}
                     className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-[10px] font-bold uppercase tracking-widest outline-none hover:bg-white/20 transition-all cursor-pointer"
                 >

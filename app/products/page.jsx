@@ -5,10 +5,10 @@ import { useAdmin } from "@/context/AdminContext";
 import { useToast } from "@/context/ToastContext";
 import ProductTable from "@/components/admin/ProductTable";
 import { SearchBar, Button, Dropdown, Input, MultiSelect } from "@/components/ui";
-import { Plus, X, Save, ArrowLeft, Trash2, Upload, Image as ImageIcon, Link as LinkIcon, Search, Loader2, Star, Globe, Package, Beaker, Sparkles } from "lucide-react";
+import { Plus, X, Save, ArrowLeft, Trash2, Upload, Loader2, Star, Globe, Package } from "lucide-react";
 import dynamic from "next/dynamic";
 import "react-quill-new/dist/quill.snow.css";
-import { uploadImage, validateImageFile, resolveImageUrl } from '@/utils/upload';
+import { uploadImage, validateImageFile, resolveImageUrl, pickImageUrl } from '@/utils/upload';
 import { loadQuillContent } from "@/utils/quill";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), { ssr: false, loading: () => <div className="p-10 flex items-center justify-center text-neutral-500">Loading editor...</div> });
@@ -74,35 +74,29 @@ export default function ProductsPage() {
             ['clean']
         ],
     }), []);
-    const [ingredientInput, setIngredientInput] = useState("");
-    const [concernInput, setConcernInput] = useState("");
 
     const emptyProduct = {
         title: "",
         slug: "",
         description: "",
-        usage: "",
         price: "",
         salePrice: "",
         stock: "",
         category: [],
         images: [],
-        ingredients: [],
         visibilityStatus: "published",
         isBestseller: false,
         isFeatured: false,
         seo: {
             metaTitle: "",
             metaDescription: ""
-        },
-        concerns: []
+        }
     };
 
     const handleEdit = (product) => {
         const productForEditing = {
             ...product,
             isBestseller: product.isBestSeller || false,
-            usage: product.usage || "",
             category: Array.isArray(product.category)
                 ? product.category.map(c => typeof c === 'object' ? c._id : c)
                 : (product.category ? [typeof product.category === 'object' ? product.category._id : product.category] : []),
@@ -170,7 +164,6 @@ export default function ProductsPage() {
             salePrice: currentProduct.salePrice ? Number(currentProduct.salePrice) : null,
             stock: Number(currentProduct.stock),
             description: currentProduct.description || "No description provided.",
-            usage: currentProduct.usage || "",
             status: currentProduct.visibilityStatus === 'draft' ? 'inactive' : 'active',
             isBestSeller: currentProduct.isBestseller,
             metaTitle: currentProduct.seo?.metaTitle || "",
@@ -261,12 +254,12 @@ export default function ProductsPage() {
                     URL.revokeObjectURL(localPreviewUrl);
                 } catch (err) {
                     console.error("Upload failed for file", file.name, err);
-                    // Remove the blob if upload failed? Or keep it to show error?
-                    // Better to remove it so user can try again
+                    addToast(`${file.name}: ${err.message}`, 'error');
                     setCurrentProduct(prev => ({
                         ...prev,
                         images: (prev.images || []).filter(img => img !== localPreviewUrl)
                     }));
+                    URL.revokeObjectURL(localPreviewUrl);
                 }
 
                 setUploadProgress(Math.round(((i + 1) / files.length) * 100));
@@ -366,22 +359,6 @@ export default function ProductsPage() {
                                     </div>
                                 </div>
 
-                                <div className="md:col-span-2 space-y-3">
-                                    <label className="block text-[10px] font-bold text-[#0a4019] uppercase tracking-wider">How To Use</label>
-                                    <div className="quill-premium-wrapper">
-                                        <ReactQuill
-                                            theme="snow"
-                                            value={loadQuillContent(currentProduct.usage)}
-                                            onChange={(content, delta, source, editor) => {
-                                                const deltaJson = JSON.stringify(editor.getContents().ops);
-                                                setCurrentProduct({ ...currentProduct, usage: deltaJson });
-                                            }}
-                                            modules={quillModules}
-                                            formats={quillFormats}
-                                        />
-                                    </div>
-                                </div>
-
                                 <Input label="Slug (URL)" value={currentProduct.slug} onChange={(e) => setCurrentProduct({ ...currentProduct, slug: e.target.value })} />
                                 <MultiSelect
                                     label="Categories *"
@@ -392,105 +369,6 @@ export default function ProductsPage() {
                                 <Input label="Price (PKR) *" type="number" value={currentProduct.price} onChange={(e) => setCurrentProduct({ ...currentProduct, price: e.target.value })} required />
                                 <Input label="Sale Price (PKR)" type="number" value={currentProduct.salePrice || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, salePrice: e.target.value })} />
                                 <Input label="Stock *" type="number" value={currentProduct.stock} onChange={(e) => setCurrentProduct({ ...currentProduct, stock: e.target.value })} required />
-
-                                <div className="md:col-span-2 space-y-4 pt-4 border-t border-[#F5F3F0]">
-                                    <div className="flex items-center gap-3">
-                                        <Beaker className="text-[#B8A68A]" size={20} />
-                                        <h3 className="text-xl font-heading font-bold text-[#0a4019]">Product Formulation</h3>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <label className="block text-[10px] font-bold text-[#0a4019] uppercase tracking-wider">Key Ingredients</label>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={ingredientInput}
-                                                    onChange={(e) => setIngredientInput(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            e.preventDefault();
-                                                            if (ingredientInput.trim()) {
-                                                                setCurrentProduct({ ...currentProduct, ingredients: [...(currentProduct.ingredients || []), ingredientInput.trim()] });
-                                                                setIngredientInput("");
-                                                            }
-                                                        }
-                                                    }}
-                                                    placeholder="Add ingredient..."
-                                                    className="flex-1 px-4 py-3 bg-white border border-[#F5F3F0] rounded-xl text-sm text-[#0a4019]"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (ingredientInput.trim()) {
-                                                            setCurrentProduct({ ...currentProduct, ingredients: [...(currentProduct.ingredients || []), ingredientInput.trim()] });
-                                                            setIngredientInput("");
-                                                        }
-                                                    }}
-                                                    className="px-4 bg-[#0a4019] text-white rounded-xl hover:bg-[#083013] transition-colors"
-                                                >
-                                                    Add
-                                                </button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                {(currentProduct.ingredients || []).map((ing, idx) => (
-                                                    <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-[#F5F3F0] text-[#0a4019] text-[10px] font-bold uppercase rounded-full border border-[#d3d3d3]/30">
-                                                        {ing}
-                                                        <button type="button" onClick={() => setCurrentProduct({ ...currentProduct, ingredients: (currentProduct.ingredients || []).filter((_, i) => i !== idx) })} className="hover:text-red-500">
-                                                            <X size={10} />
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="block text-[10px] font-bold text-[#0a4019] uppercase tracking-wider">Skin Concerns</label>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={concernInput}
-                                                    onChange={(e) => setConcernInput(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            e.preventDefault();
-                                                            if (concernInput.trim()) {
-                                                                const slugified = concernInput.trim().toLowerCase().replace(/ /g, '-');
-                                                                setCurrentProduct({ ...currentProduct, concerns: [...(currentProduct.concerns || []), slugified] });
-                                                                setConcernInput("");
-                                                            }
-                                                        }
-                                                    }}
-                                                    placeholder="Add concern..."
-                                                    className="flex-1 px-4 py-3 bg-white border border-[#F5F3F0] rounded-xl text-sm text-[#0a4019]"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (concernInput.trim()) {
-                                                            const slugified = concernInput.trim().toLowerCase().replace(/ /g, '-');
-                                                            setCurrentProduct({ ...currentProduct, concerns: [...(currentProduct.concerns || []), slugified] });
-                                                            setConcernInput("");
-                                                        }
-                                                    }}
-                                                    className="px-4 bg-[#0a4019] text-white rounded-xl hover:bg-[#083013] transition-colors"
-                                                >
-                                                    Add
-                                                </button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                {(currentProduct.concerns || []).map((concern, idx) => (
-                                                    <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 bg-[#0a4019] text-[#d3d3d3] text-[10px] font-bold uppercase rounded-full">
-                                                        {concern.replace(/-/g, ' ')}
-                                                        <button type="button" onClick={() => setCurrentProduct({ ...currentProduct, concerns: (currentProduct.concerns || []).filter((_, i) => i !== idx) })} className="hover:text-white">
-                                                            <X size={10} />
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
                             {/* SEO Section */}
@@ -538,7 +416,12 @@ export default function ProductsPage() {
                                 <div className="grid grid-cols-2 gap-3 mb-6">
                                     {currentProduct.images?.map((img, idx) => (
                                         <div key={`${img}-${idx}`} className="relative aspect-square rounded-xl overflow-hidden bg-white border border-[#F5F3F0] group shadow-sm">
-                                            <img src={img.startsWith('blob:') ? img : resolveImageUrl(img)} alt="Preview" className="w-full h-full object-cover" />
+                                            <img
+                                                src={typeof img === 'string' && img.startsWith('blob:') ? img : pickImageUrl(img, 'medium')}
+                                                alt="Preview"
+                                                className="w-full h-full object-cover"
+                                                loading="lazy"
+                                            />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                                                 {idx !== 0 && (
                                                     <button type="button" onClick={() => setPrimaryImage(idx)} className="p-1.5 bg-white text-[#0a4019] rounded-lg shadow-lg hover:scale-110 transition-transform" title="Set as Primary">

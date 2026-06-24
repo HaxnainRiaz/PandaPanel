@@ -15,6 +15,7 @@ import toast from "react-hot-toast";
 import useOrderStore from "@/store/useOrderStore";
 import { useOrderDraft } from "@/hooks/useOrderDraft";
 import ShipWithPostExModal from "@/components/postex/ShipWithPostExModal";
+import { resolveImageUrl } from "@/utils/upload";
 
 // --- Components ---
 
@@ -385,7 +386,7 @@ export default function OrderDetailPage() {
                                 return (
                                     <div key={idx} className="flex items-center gap-6 py-4 border-b border-neutral-50 last:border-0 group">
                                         <div className="w-[72px] h-[72px] rounded-[12px] bg-[#f7fbf7] border border-[#e8f0e8] overflow-hidden flex items-center justify-center shrink-0">
-                                            {item.product?.images?.[0] ? <img src={item.product.images[0]} className="w-full h-full object-cover" /> : <Box size={28} className="text-[#6b7c6b]/30" />}
+                                            {item.product?.images?.[0] ? <img src={resolveImageUrl(item.product.images[0])} className="w-full h-full object-cover" /> : <Box size={28} className="text-[#6b7c6b]/30" />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-bold text-[#1a1a1a] truncate mb-2">{item.product?.title || 'Product'}</p>

@@ -15,6 +15,7 @@ import toast from "react-hot-toast";
 import useOrderStore from "@/store/useOrderStore";
 import { useOrderDraft } from "@/hooks/useOrderDraft";
 import ShipWithPostExModal from "@/components/postex/ShipWithPostExModal";
+import { resolveImageUrl } from "@/utils/upload";
 
 // --- Sub-components ---
 
@@ -491,7 +492,7 @@ export default function OrderSlider() {
                                                 <div key={idx} className="flex items-center gap-4 py-4 border-b border-neutral-50 last:border-0 group">
                                                     {/* Product Image */}
                                                     <div className="w-[64px] h-[64px] rounded-2xl bg-[#f7fbf7] border border-[#e8f0e8] overflow-hidden flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105">
-                                                        {item.product?.images?.[0] ? <img src={item.product.images[0]} className="w-full h-full object-cover" /> : <Box size={24} className="text-[#6b7c6b]/30" />}
+                                                        {item.product?.images?.[0] ? <img src={resolveImageUrl(item.product.images[0])} className="w-full h-full object-cover" /> : <Box size={24} className="text-[#6b7c6b]/30" />}
                                                     </div>
 
                                                     <div className="flex-1 min-w-0">
